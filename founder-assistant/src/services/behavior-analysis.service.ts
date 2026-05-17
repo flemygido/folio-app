@@ -55,6 +55,7 @@ export async function analyzeEmailBehavior(userId: string) {
   // Build a set of thread IDs where user replied
   const repliedThreads = new Map<string, Date>();
   for (const sent of sentEmails) {
+    if (!sent.gmailThreadId) continue;
     const existing = repliedThreads.get(sent.gmailThreadId);
     if (!existing || sent.receivedAt < existing) {
       repliedThreads.set(sent.gmailThreadId, sent.receivedAt);
@@ -66,7 +67,7 @@ export async function analyzeEmailBehavior(userId: string) {
     string,
     {
       name: string | null;
-      emails: Array<{ threadId: string; receivedAt: Date; wasRead: boolean }>;
+      emails: Array<{ threadId: string | null; receivedAt: Date; wasRead: boolean }>;
     }
   >();
 
@@ -96,7 +97,7 @@ export async function analyzeEmailBehavior(userId: string) {
     let repliedCount = 0;
 
     for (const e of data.emails) {
-      const replyTime = repliedThreads.get(e.threadId);
+      const replyTime = e.threadId ? repliedThreads.get(e.threadId) : undefined;
       if (replyTime) {
         totalReplied++;
         const latency = (replyTime.getTime() - e.receivedAt.getTime()) / 60000;
@@ -189,7 +190,7 @@ export async function analyzeEmailBehavior(userId: string) {
   // 5. Analyze writing style from sent emails (personality inference)
   const sentSample = sentEmails.slice(0, 30);
   if (sentSample.length > 0) {
-    await inferWritingStyle(userId, sentSample.map((s) => s.gmailThreadId));
+    await inferWritingStyle(userId, sentSample.map((s) => s.gmailThreadId).filter((id): id is string => id !== null));
   }
 
   const duration = Date.now() - startedAt;

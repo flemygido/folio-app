@@ -85,7 +85,7 @@ export async function POST() {
           try {
             const raw = await gmailClient.users.messages.get({
               userId: "me",
-              id: email.gmailMessageId,
+              id: email.gmailMessageId ?? undefined,
               format: "full",
             });
             const labelIds: string[] = (raw.data as any).labelIds ?? [];

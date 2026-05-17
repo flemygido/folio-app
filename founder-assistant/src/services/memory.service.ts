@@ -146,7 +146,7 @@ export async function getAlreadyInformedIds(userId: string): Promise<string[]> {
     orderBy: { informedAt: "desc" },
     take: 100,
   });
-  return informed.map((e) => e.gmailMessageId);
+  return informed.map((e) => e.gmailMessageId).filter((id): id is string => id !== null);
 }
 
 export async function markAsInformed(userId: string, emailIds: string[], briefingId: string) {

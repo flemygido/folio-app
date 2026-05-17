@@ -79,8 +79,8 @@ export function createGmailSyncWorker() {
 
         // Convert to GmailMessage format for processing
         const gmailMessages = rawMessages.map((e) => ({
-          id: e.gmailMessageId,
-          threadId: e.gmailThreadId,
+          id: e.gmailMessageId ?? "",
+          threadId: e.gmailThreadId ?? "",
           subject: e.subject,
           from: e.fromAddress,
           fromName: e.fromName,

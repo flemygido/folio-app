@@ -35,7 +35,7 @@ export const {
     MicrosoftEntraID({
       clientId: process.env.AZURE_AD_CLIENT_ID!,
       clientSecret: process.env.AZURE_AD_CLIENT_SECRET!,
-      tenantId: "common", // multi-tenant: works for any org or personal MS account
+      issuer: "https://login.microsoftonline.com/common/v2.0",
       authorization: {
         params: {
           scope: [
