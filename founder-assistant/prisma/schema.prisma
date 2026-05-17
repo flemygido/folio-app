@@ -1,0 +1,572 @@
+// Folio – AI Founder Assistant
+// Production Prisma schema — v2 (behavior learning + calendar intelligence + widget)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── ENUMS ───────────────────────────────────────────────────────────────────
+
+enum Provider {
+  GMAIL
+  GOOGLE_CALENDAR
+  GOOGLE_DRIVE
+}
+
+enum EmailCategory {
+  URGENT
+  ACTION_REQUIRED
+  WATCH
+  INFORMATIONAL
+  NEWSLETTER
+  PROMO
+  IGNORE
+}
+
+enum TaskPriority {
+  URGENT
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum TaskStatus {
+  OPEN
+  DONE
+  SNOOZED
+  DISMISSED
+}
+
+enum TaskSource {
+  EMAIL
+  CALENDAR
+  DRIVE
+  MANUAL
+}
+
+enum ReminderStatus {
+  PENDING
+  SENT
+  DISMISSED
+}
+
+enum MemoryType {
+  CONTACT
+  PROJECT
+  PRIORITY
+  PREFERENCE
+  SUPPRESSION
+  CONTEXT
+}
+
+enum BriefingStatus {
+  GENERATING
+  READY
+  FAILED
+}
+
+enum FeedbackType {
+  IMPORTANT
+  SEEN
+  LATER
+  IGNORE
+  NOT_RELEVANT
+  WRONG_CATEGORY
+}
+
+enum AuditAction {
+  SYNC_GMAIL
+  SYNC_CALENDAR
+  SYNC_DRIVE
+  CLASSIFY_EMAIL
+  GENERATE_BRIEFING
+  EXTRACT_TASKS
+  UPDATE_MEMORY
+  USER_FEEDBACK
+  AUTH_LOGIN
+  AUTH_LOGOUT
+  TOKEN_REFRESH
+  BEHAVIOR_ANALYSIS
+  CALENDAR_INTELLIGENCE
+  DELETE_DATA
+}
+
+enum AlertType {
+  ABSENCE_CONFLICT
+  DEADLINE_RISK
+  VIP_MESSAGE
+  MEETING_CHANGE
+  PAYMENT_RISK
+  DECISION_PENDING
+  FOLLOW_UP_NEEDED
+}
+
+enum AlertUrgency {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AssistantPersonality {
+  CALM_PROFESSIONAL
+  WARM_SUPPORTIVE
+  DIRECT_EFFICIENT
+  ENERGETIC
+}
+
+enum AvatarStyle {
+  PROFESSIONAL
+  FRIENDLY
+  MINIMAL
+}
+
+enum AssistantGender {
+  FEMALE
+  MALE
+  NEUTRAL
+}
+
+enum SyncStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
+// ─── USERS ───────────────────────────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  emailVerified DateTime?
+  name          String?
+  image         String?
+  timezone      String   @default("UTC")
+  briefingTime  String   @default("07:00")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // NextAuth adapter relations
+  accounts            Account[]
+  sessions            Session[]
+
+  // App relations
+  oauthConnections    OAuthConnection[]
+  emails              Email[]
+  calendarEvents      CalendarEvent[]
+  driveFiles          DriveFile[]
+  memoryFacts         MemoryFact[]
+  suppressions        MemorySuppression[]
+  dailyBriefs         DailyBriefing[]
+  tasks               Task[]
+  reminders           Reminder[]
+  feedbackEvents      FeedbackEvent[]
+  auditLogs           AuditLog[]
+  syncCursors         SyncCursor[]
+  personalityProfile  UserPersonalityProfile?
+  emailBehaviorStats  EmailBehaviorStat[]
+  smartAlerts         SmartAlert[]
+
+  @@index([email])
+}
+
+// ─── NEXTAUTH REQUIRED MODELS ────────────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── OAUTH ───────────────────────────────────────────────────────────────────
+
+model OAuthConnection {
+  id                String   @id @default(cuid())
+  userId            String
+  provider          Provider
+  providerAccountId String
+  // AES-256-GCM encrypted JSON blob: { accessToken, refreshToken, expiresAt }
+  encryptedTokens   String
+  scope             String?
+  connectedAt       DateTime @default(now())
+  lastRefreshedAt   DateTime?
+  isActive          Boolean  @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@index([userId])
+}
+
+// ─── SYNC CURSORS ────────────────────────────────────────────────────────────
+
+model SyncCursor {
+  id        String   @id @default(cuid())
+  userId    String
+  provider  Provider
+  cursor    String   // historyId / syncToken / pageToken
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+}
+
+// ─── EMAILS ──────────────────────────────────────────────────────────────────
+
+model Email {
+  id              String   @id @default(cuid())
+  userId          String
+  gmailMessageId  String   @unique
+  gmailThreadId   String
+  subject         String
+  fromAddress     String
+  fromName        String?
+  toAddresses     String[] // array of emails
+  snippet         String?
+  bodyText        String?  // stored for classification only, not cached long-term
+  receivedAt      DateTime
+  internalDate    BigInt   // Gmail internalDate (ms epoch)
+
+  // Classification output
+  importanceScore Int?     // 0–100
+  category        EmailCategory?
+  whyImportant    String?
+  shortSummary    String?
+  actionNeeded    String?
+  dueDate         String?
+  confidence      Float?
+  classifiedAt    DateTime?
+
+  // Dedup / already-informed
+  alreadyInformed  Boolean  @default(false)
+  informedAt       DateTime?
+  briefingId       String?
+
+  // Thread metadata
+  threadSize       Int      @default(1)
+
+  isDeleted        Boolean  @default(false)
+  labels           String[] // Gmail label ids
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks            Task[]
+  feedbackEvents   FeedbackEvent[]
+
+  @@index([userId, receivedAt(sort: Desc)])
+  @@index([userId, category])
+  @@index([userId, importanceScore(sort: Desc)])
+  @@index([userId, alreadyInformed])
+  @@index([gmailThreadId])
+}
+
+// ─── CALENDAR EVENTS ─────────────────────────────────────────────────────────
+
+model CalendarEvent {
+  id              String   @id @default(cuid())
+  userId          String
+  googleEventId   String   @unique
+  calendarId      String
+  title           String
+  description     String?
+  startTime       DateTime
+  endTime         DateTime
+  isAllDay        Boolean  @default(false)
+  attendees       Json     // [{ email, name, responseStatus }]
+  organizer       Json?    // { email, name }
+  location        String?
+  meetLink        String?
+  importance      String   @default("medium") // high | medium | low
+  prepNote        String?  // AI-generated prep note
+  isDeleted       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startTime])
+  @@index([userId, isDeleted])
+}
+
+// ─── DRIVE FILES ─────────────────────────────────────────────────────────────
+
+model DriveFile {
+  id              String   @id @default(cuid())
+  userId          String
+  googleFileId    String   @unique
+  name            String
+  mimeType        String
+  webViewLink     String?
+  modifiedAt      DateTime
+  modifiedByMe    Boolean  @default(false)
+  owners          Json?    // [{ email, name }]
+  lastModifyingUser Json?
+  isSignal        Boolean  @default(false) // flagged as worth surfacing
+  signalReason    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, modifiedAt(sort: Desc)])
+}
+
+// ─── MEMORY ──────────────────────────────────────────────────────────────────
+
+model MemoryFact {
+  id          String     @id @default(cuid())
+  userId      String
+  type        MemoryType
+  key         String     // e.g. "vip_sender", "active_project", "ignore_topic"
+  value       String     // the fact itself
+  confidence  Float      @default(0.8) // 0.0–1.0
+  source      String?    // "email_pattern", "user_feedback", "calendar"
+  sourceRef   String?    // email id / event id that triggered it
+  isActive    Boolean    @default(true)
+  expiresAt   DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@index([userId, isActive])
+  @@index([userId, key])
+}
+
+model MemorySuppression {
+  id          String   @id @default(cuid())
+  userId      String
+  pattern     String   // email address, domain, or keyword
+  reason      String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, pattern])
+  @@index([userId, isActive])
+}
+
+// ─── DAILY BRIEFINGS ─────────────────────────────────────────────────────────
+
+model DailyBriefing {
+  id              String         @id @default(cuid())
+  userId          String
+  date            String         // YYYY-MM-DD (user's local date)
+  status          BriefingStatus @default(GENERATING)
+  signalScore     Int?           // 0–100 overall signal quality
+  unreadCount     Int?
+  importantCount  Int?
+  suppressedCount Int?
+  headline        String?        // "3 actions needed, 1 funding update"
+  narrative       String?        // full briefing markdown prose
+  generatedAt     DateTime?
+  createdAt       DateTime       @default(now())
+
+  user  User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId, date(sort: Desc)])
+}
+
+// ─── TASKS ───────────────────────────────────────────────────────────────────
+
+model Task {
+  id          String       @id @default(cuid())
+  userId      String
+  title       String
+  description String?
+  priority    TaskPriority @default(MEDIUM)
+  status      TaskStatus   @default(OPEN)
+  source      TaskSource   @default(EMAIL)
+  sourceId    String?      // email id / event id
+  dueAt       DateTime?
+  snoozedUntil DateTime?
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email Email? @relation(fields: [sourceId], references: [id])
+
+  @@index([userId, status])
+  @@index([userId, priority, status])
+  @@index([userId, dueAt])
+}
+
+// ─── REMINDERS ───────────────────────────────────────────────────────────────
+
+model Reminder {
+  id        String         @id @default(cuid())
+  userId    String
+  text      String
+  sourceId  String?        // email id that triggered it
+  sendAt    DateTime
+  status    ReminderStatus @default(PENDING)
+  sentAt    DateTime?
+  createdAt DateTime       @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, sendAt])
+}
+
+// ─── FEEDBACK ────────────────────────────────────────────────────────────────
+
+model FeedbackEvent {
+  id        String       @id @default(cuid())
+  userId    String
+  emailId   String?
+  type      FeedbackType
+  notes     String?
+  createdAt DateTime     @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email Email? @relation(fields: [emailId], references: [id])
+
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+// ─── AUDIT LOGS ──────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id        String      @id @default(cuid())
+  userId    String
+  action    AuditAction
+  detail    String?
+  meta      Json?       // extra structured data
+  durationMs Int?
+  createdAt DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, action])
+}
+
+// ─── USER PERSONALITY PROFILE ────────────────────────────────────────────────
+
+model UserPersonalityProfile {
+  id                  String               @id @default(cuid())
+  userId              String               @unique
+  // User meta
+  displayName         String?
+  role                String?              // "Founder" | "CEO" | "COO" | "Executive"
+  industry            String?
+  companySize         String?              // "solo" | "2-10" | "11-50" | "50+"
+  topPriorities       String[]             // up to 3 free-text priorities
+  priorityDomains     String[]             // revenue | team | legal | partnerships | product | finance
+  // Assistant config
+  assistantName       String               @default("Aria")
+  assistantGender     AssistantGender      @default(FEMALE)
+  assistantPersonality AssistantPersonality @default(CALM_PROFESSIONAL)
+  avatarStyle         AvatarStyle          @default(PROFESSIONAL)
+  avatarColor         String               @default("#f59e0b")
+  // Behavior preferences
+  briefingTone        String               @default("concise")   // concise | detailed | conversational
+  urgencyThreshold    Int                  @default(75)
+  checkInFrequency    String               @default("daily")     // hourly | daily | manual
+  workHoursStart      String               @default("08:00")
+  workHoursEnd        String               @default("20:00")
+  // Onboarding
+  onboardingComplete  Boolean              @default(false)
+  onboardingAnswers   Json?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── EMAIL BEHAVIOR STATS ────────────────────────────────────────────────────
+// Derived from analyzing sent/received patterns. Updated weekly.
+
+model EmailBehaviorStat {
+  id                  String   @id @default(cuid())
+  userId              String
+  senderAddress       String
+  senderName          String?
+  totalReceived       Int      @default(0)
+  totalRead           Int      @default(0)          // emails without UNREAD label
+  totalReplied        Int      @default(0)          // user sent a reply in thread
+  avgResponseMinutes  Float?                        // average reply latency
+  lastEmailAt         DateTime?
+  lastRepliedAt       DateTime?
+  importanceSignal    Float    @default(0.5)        // 0.0–1.0 derived score
+  updatedAt           DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, senderAddress])
+  @@index([userId, importanceSignal(sort: Desc)])
+}
+
+// ─── SMART ALERTS ────────────────────────────────────────────────────────────
+// Cross-referenced intelligence (absence + calendar, deadline conflicts, etc.)
+
+model SmartAlert {
+  id              String       @id @default(cuid())
+  userId          String
+  type            AlertType
+  urgency         AlertUrgency @default(MEDIUM)
+  title           String
+  body            String
+  sourceEmailId   String?
+  sourceEventId   String?
+  subjectPerson   String?      // the person the alert is about
+  subjectDate     String?      // relevant date string
+  isRead          Boolean      @default(false)
+  isDismissed     Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt(sort: Desc)])
+  @@index([userId, isDismissed])
+}
+
+// ─── ADD to User model (append virtual relations) ─────────────────────────────
+// (Add these fields to the User model above manually)
+// personalityProfile  UserPersonalityProfile?
+// emailBehaviorStats  EmailBehaviorStat[]
+// smartAlerts         SmartAlert[]
