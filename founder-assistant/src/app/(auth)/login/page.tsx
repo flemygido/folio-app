@@ -4,11 +4,16 @@ import { signIn } from "next-auth/react";
 import { useState } from "react";
 
 export default function LoginPage() {
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<"google" | "microsoft" | null>(null);
 
-  const handleLogin = async () => {
-    setLoading(true);
+  const handleGoogle = async () => {
+    setLoading("google");
     await signIn("google", { callbackUrl: "/" });
+  };
+
+  const handleMicrosoft = async () => {
+    setLoading("microsoft");
+    await signIn("microsoft-entra-id", { callbackUrl: "/" });
   };
 
   return (
@@ -36,16 +41,17 @@ export default function LoginPage() {
             Your inbox, under control.
           </h1>
           <p className="text-sm text-slate-500 mb-8 leading-relaxed">
-            Connect your Google account to get signal-only briefings, smart task extraction, and an AI assistant that knows your work — whether you get 10 emails or 500.
+            Connect your work account to get signal-only briefings, smart task extraction, and an AI assistant that knows your work.
           </p>
 
+          {/* Google */}
           <button
-            onClick={handleLogin}
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-3 bg-white text-gray-800 font-semibold text-sm py-3 px-4 rounded-xl hover:bg-gray-50 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+            onClick={handleGoogle}
+            disabled={loading !== null}
+            className="w-full flex items-center justify-center gap-3 bg-white text-gray-800 font-semibold text-sm py-3 px-4 rounded-xl hover:bg-gray-50 transition-all disabled:opacity-60 disabled:cursor-not-allowed mb-3"
           >
-            {loading ? (
-              <span className="animate-pulse-slow">Connecting…</span>
+            {loading === "google" ? (
+              <span className="animate-pulse">Connecting…</span>
             ) : (
               <>
                 <svg className="w-4 h-4" viewBox="0 0 24 24">
@@ -59,9 +65,36 @@ export default function LoginPage() {
             )}
           </button>
 
-          <p className="text-xs text-slate-600 mt-6 text-center leading-relaxed">
-            Read-only access to Gmail, Calendar, and Drive.
-            Your data stays encrypted and private — never shared or sold.
+          {/* Microsoft */}
+          <button
+            onClick={handleMicrosoft}
+            disabled={loading !== null}
+            className="w-full flex items-center justify-center gap-3 bg-[#0078d4] text-white font-semibold text-sm py-3 px-4 rounded-xl hover:bg-[#006cc1] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {loading === "microsoft" ? (
+              <span className="animate-pulse">Connecting…</span>
+            ) : (
+              <>
+                <svg className="w-4 h-4" viewBox="0 0 21 21" fill="none">
+                  <rect x="1" y="1" width="9" height="9" fill="#F25022" />
+                  <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
+                  <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
+                  <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
+                </svg>
+                Continue with Microsoft
+              </>
+            )}
+          </button>
+
+          <div className="flex items-center gap-3 my-4">
+            <div className="flex-1 h-px bg-slate-800" />
+            <span className="text-xs text-slate-600">works with Outlook, Teams & Calendar</span>
+            <div className="flex-1 h-px bg-slate-800" />
+          </div>
+
+          <p className="text-xs text-slate-600 text-center leading-relaxed">
+            Read-only access to email and calendar.
+            Your data stays encrypted — never shared or sold.
           </p>
         </div>
 
@@ -70,7 +103,7 @@ export default function LoginPage() {
           {[
             { icon: "✉️", label: "Email intelligence" },
             { icon: "📅", label: "Meeting prep" },
-            { icon: "🧠", label: "Memory & context" },
+            { icon: "💬", label: "Teams signals" },
           ].map((f) => (
             <div key={f.label} className="text-center">
               <div className="text-lg mb-1">{f.icon}</div>

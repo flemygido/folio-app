@@ -17,6 +17,9 @@ enum Provider {
   GMAIL
   GOOGLE_CALENDAR
   GOOGLE_DRIVE
+  OUTLOOK
+  MICROSOFT_CALENDAR
+  MICROSOFT_TEAMS
 }
 
 enum EmailCategory {
@@ -84,6 +87,8 @@ enum AuditAction {
   SYNC_GMAIL
   SYNC_CALENDAR
   SYNC_DRIVE
+  SYNC_OUTLOOK
+  SYNC_TEAMS
   CLASSIFY_EMAIL
   GENERATE_BRIEFING
   EXTRACT_TASKS
@@ -173,6 +178,7 @@ model User {
   personalityProfile  UserPersonalityProfile?
   emailBehaviorStats  EmailBehaviorStat[]
   smartAlerts         SmartAlert[]
+  teamsMessages       TeamsMessage[]
 
   @@index([email])
 }
@@ -254,8 +260,11 @@ model SyncCursor {
 model Email {
   id              String   @id @default(cuid())
   userId          String
-  gmailMessageId  String   @unique
-  gmailThreadId   String
+  emailSource     String   @default("GMAIL") // GMAIL | OUTLOOK
+  gmailMessageId  String?  @unique
+  gmailThreadId   String?
+  outlookMessageId String? @unique
+  outlookThreadId  String?
   subject         String
   fromAddress     String
   fromName        String?
@@ -305,7 +314,9 @@ model Email {
 model CalendarEvent {
   id              String   @id @default(cuid())
   userId          String
-  googleEventId   String   @unique
+  calendarSource  String   @default("GOOGLE") // GOOGLE | MICROSOFT
+  googleEventId   String?  @unique
+  outlookEventId  String?  @unique
   calendarId      String
   title           String
   description     String?
@@ -565,8 +576,30 @@ model SmartAlert {
   @@index([userId, isDismissed])
 }
 
-// ─── ADD to User model (append virtual relations) ─────────────────────────────
-// (Add these fields to the User model above manually)
-// personalityProfile  UserPersonalityProfile?
-// emailBehaviorStats  EmailBehaviorStat[]
-// smartAlerts         SmartAlert[]
+// ─── TEAMS MESSAGES ──────────────────────────────────────────────────────────
+
+model TeamsMessage {
+  id              String        @id @default(cuid())
+  userId          String
+  teamsMessageId  String        @unique
+  chatId          String
+  chatName        String?
+  chatType        String?       // oneOnOne | group | channel
+  senderName      String?
+  senderAddress   String?
+  content         String?
+  receivedAt      DateTime
+  importanceScore Int?
+  category        EmailCategory?
+  shortSummary    String?
+  actionNeeded    String?
+  alreadyInformed Boolean       @default(false)
+  isDeleted       Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, receivedAt(sort: Desc)])
+  @@index([userId, importanceScore(sort: Desc)])
+}
