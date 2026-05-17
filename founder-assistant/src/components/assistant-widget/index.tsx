@@ -61,20 +61,34 @@ export function AssistantWidget({ config, alerts }: AssistantWidgetProps) {
   const [avatarState, setAvatarState] = useState<AvatarState>("idle");
   const [hasGreeted, setHasGreeted] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [chatMessages, setChatMessages] = useState<Array<{id: string; role: "assistant" | "user"; content: string; at: Date}>>([
-    {
+  const [chatMessages, setChatMessages] = useState<Array<{id: string; role: "assistant" | "user"; content: string; at: Date}>>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem("folio_chat_history");
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [{
       id: "welcome",
-      role: "assistant",
+      role: "assistant" as const,
       content: alerts.length > 0
         ? `Hi! I found ${alerts.length} thing${alerts.length > 1 ? "s" : ""} that need${alerts.length === 1 ? "s" : ""} your attention. How can I help?`
         : "Hi! Everything looks calm right now. How can I help?",
       at: new Date(),
-    },
-  ]);
+    }];
+  });
 
   const containerRef = useRef<HTMLDivElement>(null);
   const dragStartPos = useRef({ x: 0, y: 0 });
   const hasDragged = useRef(false);
+
+  // Persist chat history across sessions
+  useEffect(() => {
+    try { localStorage.setItem("folio_chat_history", JSON.stringify(chatMessages.slice(-30))); } catch {}
+  }, [chatMessages]);
+
+  // Tell Electron to capture or pass through mouse events
+  const setInteractive = () => (window as any).folioDesktop?.setInteractive?.();
+  const setPassthrough = () => (window as any).folioDesktop?.setPassthrough?.();
 
   const unreadCount = alerts.filter((a) => !a.isRead).length;
 
@@ -143,6 +157,8 @@ export function AssistantWidget({ config, alerts }: AssistantWidgetProps) {
       ref={containerRef}
       className="fixed z-[9999] select-none"
       style={CORNER_STYLES[corner]}
+      onMouseEnter={setInteractive}
+      onMouseLeave={setPassthrough}
     >
       {/* Chat panel */}
       {open && (
