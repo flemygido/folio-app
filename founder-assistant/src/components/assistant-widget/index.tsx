@@ -52,7 +52,7 @@ const PANEL_ORIGIN: Record<Corner, React.CSSProperties> = {
   "top-left": { top: 84, left: 0, transformOrigin: "top left" },
 };
 
-export function AssistantWidget({ config, alerts }: AssistantWidgetProps) {
+export function AssistantWidget({ config, alerts: initialAlerts }: AssistantWidgetProps) {
   const [corner, setCorner] = useState<Corner>(() => {
     if (typeof window === "undefined") return "bottom-right";
     return (localStorage.getItem("folio_widget_corner") as Corner) ?? "bottom-right";
@@ -61,6 +61,7 @@ export function AssistantWidget({ config, alerts }: AssistantWidgetProps) {
   const [avatarState, setAvatarState] = useState<AvatarState>("idle");
   const [hasGreeted, setHasGreeted] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [alerts, setAlerts] = useState(initialAlerts);
   const [chatMessages, setChatMessages] = useState<Array<{id: string; role: "assistant" | "user"; content: string; at: Date}>>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -91,6 +92,17 @@ export function AssistantWidget({ config, alerts }: AssistantWidgetProps) {
   const setPassthrough = () => (window as any).folioDesktop?.setPassthrough?.();
 
   const unreadCount = alerts.filter((a) => !a.isRead).length;
+
+  // Mark all unread alerts as read when chat opens
+  useEffect(() => {
+    if (!open) return;
+    const unread = alerts.filter((a) => !a.isRead);
+    if (unread.length === 0) return;
+    setAlerts((prev) => prev.map((a) => ({ ...a, isRead: true })));
+    unread.forEach((a) => {
+      fetch("/api/alerts", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: a.id, action: "read" }) }).catch(() => {});
+    });
+  }, [open]);
 
   // Greet on first open
   useEffect(() => {
@@ -191,24 +203,13 @@ export function AssistantWidget({ config, alerts }: AssistantWidgetProps) {
           transition: "filter 0.2s",
         }}
       >
-        {/* Pulse ring when alert */}
-        {avatarState === "alert" && !open && (
-          <div
-            className="absolute inset-0 rounded-full"
-            style={{
-              background: config.avatarColor,
-              animation: "pingRing 1.5s ease-in-out infinite",
-              opacity: 0,
-            }}
-          />
-        )}
-
         {/* Avatar */}
         <div
           className="rounded-full overflow-hidden"
           style={{
             boxShadow: `0 8px 32px ${config.avatarColor}44, 0 2px 8px rgba(0,0,0,0.6)`,
-            transition: "transform 0.2s, box-shadow 0.2s",
+            animation: avatarState === "alert" && !open ? "glowPulse 1.6s ease-in-out infinite" : "none",
+            transition: "transform 0.2s",
             transform: open ? "scale(1.05)" : "scale(1)",
           }}
         >
@@ -246,9 +247,9 @@ export function AssistantWidget({ config, alerts }: AssistantWidgetProps) {
           0%, 100% { transform: translateY(0px); }
           50% { transform: translateY(-6px); }
         }
-        @keyframes pingRing {
-          0% { transform: scale(1); opacity: 0.7; }
-          100% { transform: scale(2.2); opacity: 0; }
+        @keyframes glowPulse {
+          0%, 100% { filter: brightness(1) saturate(1); }
+          50% { filter: brightness(1.35) saturate(1.3); }
         }
         @keyframes widgetOpen {
           from { opacity: 0; transform: scale(0.85); }
